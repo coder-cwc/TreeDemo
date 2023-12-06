@@ -1,4 +1,4 @@
-import { defineComponent, onMounted, reactive } from "vue";
+import { defineComponent, nextTick, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import clbIcon from "./assets/clb.png";
 import listenerIcon from "./assets/listener.png";
@@ -8,24 +8,15 @@ export default defineComponent({
   name: "TreeDemo",
   setup() {
     const treeData = reactive([]);
+    const loadingRef = ref([]);
 
-    const pageOptions = reactive({
-      clb: {
-        _page: 1,
-        _limit: 50,
-        hasNext: true,
-      },
-      listener: {
-        _page: 1,
-        _limit: 50,
-        hasNext: true,
-      },
-      domain: {
-        _page: 1,
-        _limit: 50,
-        hasNext: true,
-      },
-    })
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          console.log('加载数据');
+        }
+      });
+    });
 
     const getInitData = async () => {
       const [res1, res2] = await Promise.all([
@@ -37,7 +28,6 @@ export default defineComponent({
         item.async = true;
         return item;
       }))
-      pageOptions.clb.hasNext = treeData.length !== res2.data;
     }
 
     onMounted(() => {
@@ -59,9 +49,7 @@ export default defineComponent({
           // 插入 loading 节点
           _item.children.push({type: "loading"});
         }
-        setTimeout(() => {
-          console.log(document.querySelectorAll(".loading-ref"));
-        }, 100);
+        console.log(loadingRef.value);
       } else if (_item.type === 'listener') {
         const [res1, res2] = await Promise.all([
           axios.get(`http://localhost:3000/domain?pid=${_item.id}`, { params: { _page: 1, _limit: 50 } }),
@@ -93,7 +81,7 @@ export default defineComponent({
         >
           {{
             default: ({ data }) => {
-              if (data.type === 'loading') return <bk-loading class="loading-ref" loading size="small"><div style={{ height: "36px" }}></div></bk-loading>
+              if (data.type === 'loading') return <bk-loading ref={(ref) => loadingRef.value.push(ref)} loading size="small"><div style={{ height: "36px" }}></div></bk-loading>
               return <div>{data.name}</div>
             },
             nodeType: (node) => {
