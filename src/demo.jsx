@@ -73,7 +73,6 @@ export default defineComponent({
           level-line
           label="name"
           children="children"
-          virtual-render={true}
           async={{
             callback: getRemoteData,
             cache: true,
