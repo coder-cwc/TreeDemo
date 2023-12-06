@@ -1,0 +1,5 @@
+
+  {
+    "installDependencies": false,
+    "startCommand": "turbo && turbo dev"
+  }
