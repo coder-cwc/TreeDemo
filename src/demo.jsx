@@ -31,8 +31,8 @@ export default defineComponent({
 
     const hanldeLoadData = async(_item, _depth) => {
       const url = `http://localhost:3000/${_item.subType}`;
-      const params = { _page: _item.pageNum, _limit: 50, pid: _item.id };
-      const [res1, res2] = await Promise.all([ axios.get(url, {params}), axios.get(url) ]);
+      const params = { _page: _item.pageNum, _limit: 50, parentId: _item.id };
+      const [res1, res2] = await Promise.all([ axios.get(url, {params}), axios.get(url, {params: { parentId: _item.id }}) ]);
       _item.children = [..._item.children, ...res1.data.map(item => {
         item.type = _item.subType;
         if (_depth < 3) {
