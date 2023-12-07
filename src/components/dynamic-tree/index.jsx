@@ -11,7 +11,7 @@ import axios from "axios";
  */
 export default defineComponent({
   name: "DynamicTree",
-  props: ["baseUrl", "treeData", "typeIconMap"],
+  props: ["baseUrl", "treeData", "rootType", "typeIconMap"],
   emits: ["update:treeData"],
   setup(props, ctx) {
     const loadingRef = ref(null);
@@ -34,7 +34,7 @@ export default defineComponent({
      * @param {*} isLoadRoot 值为 true 时，加载根节点；建议为 true 时，前两个参数设置为 null。
      */
     const loadRemoteData = async(_item, _depth, isLoadRoot) => {
-      const url = props.baseUrl + `/${isLoadRoot ? 'clb' : _item.subType}`;
+      const url = props.baseUrl + `/${isLoadRoot ? props.rootType : _item.subType}`;
       const params = { 
         _page: isLoadRoot ? rootPageNum.value : _item.pageNum, 
         _limit: 50, 

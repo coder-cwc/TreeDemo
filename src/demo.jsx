@@ -10,6 +10,7 @@ export default defineComponent({
 
     const treeData = ref([]);
     const baseUrl = 'http://localhost:3000';
+    const rootType = 'clb';
 
     const typeIconMap = {
       clb: clbIcon,
@@ -18,7 +19,7 @@ export default defineComponent({
     };
 
     return () => (
-      <DynamicTree v-model:treeData={treeData.value} baseUrl={baseUrl} typeIconMap={typeIconMap} style={{ width: "500px", height: "100vh" }}></DynamicTree>
+      <DynamicTree v-model:treeData={treeData.value} baseUrl={baseUrl} rootType={rootType} typeIconMap={typeIconMap} style={{ width: "500px", height: "100vh" }}></DynamicTree>
     )
   }
 })
