@@ -1,5 +1,6 @@
-import { defineComponent, ref } from "vue";
+import { defineComponent, nextTick, onMounted, ref } from "vue";
 import { throttle } from "lodash";
+import axios from "axios";
 
 /**
  * 基于 bkui-vue Tree 的动态树，支持滚动加载数据。
@@ -10,51 +11,103 @@ import { throttle } from "lodash";
  */
 export default defineComponent({
   name: "DynamicTree",
-  props: ["treeData", "typeIconMap"],
-  emits: ["loadData", "loadRootDataByScroll"],
+  props: ["baseUrl", "treeData", "typeIconMap"],
+  emits: ["update:treeData"],
   setup(props, ctx) {
     const loadingRef = ref(null);
+    const rootPageNum = ref(1);
 
     // Intersection Observer 监听器
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          // 触发 loadingRef 身上的 loadData 自定义事件
-          loadingRef.value.$emit("loadData");
+          // 触发 loadingRef 身上的 loadDataByScroll 自定义事件
+          loadingRef.value.$emit("loadDataByScroll");
         }
       });
     });
 
-    // 因为在标签上使用 data-xxx 会丢失引用，但我需要 data._parent 的引用（因为加载数据时会直接操作该对象），所以这里借用了闭包的特性。
-    const handleLoadData = (data, attributes) => {
-      if (data._parent) { // 加载下一页的 childrenData
+    /**
+     * 加载数据
+     * @param {*} _item 需要加载数据的节点
+     * @param {*} _depth 需要加载数据的节点的深度
+     * @param {*} isLoadRoot 值为 true 时，加载根节点；建议为 true 时，前两个参数设置为 null。
+     */
+    const loadRemoteData = async(_item, _depth, isLoadRoot) => {
+      const url = props.baseUrl + `/${isLoadRoot ? 'clb' : _item.subType}`;
+      const params = { 
+        _page: isLoadRoot ? rootPageNum.value : _item.pageNum, 
+        _limit: 50, 
+        parentId: isLoadRoot ? null : _item.id // 根节点没有 parentId，或者后端给个 null 也行，这样前端这里就不需要判断了
+      };
+      const [res1, res2] = await Promise.all([ axios.get(url, {params}), axios.get(url, {params: { parentId: isLoadRoot ? null : _item.id }}) ]);
+
+      // 组装新增的节点
+      const _increamentNodes = res1.data.map(item => {
+        // 如果是加载根节点的数据，就不用设置 item.type
+        !isLoadRoot && (item.type = _item.subType);
+        // 如果是加载根节点或非叶子节点的数据，需要给每个 item 添加 async = true 以及初始化 pageNum = 1
+        if (_depth < 3 || isLoadRoot) {
+          item.async = true;
+          item.pageNum = 1;
+        }
+        return item;
+      })
+      
+      if (isLoadRoot) {
+        const _treeData = [...props.treeData, ..._increamentNodes];
+        if (_treeData.length < res2.data.length) {
+          ctx.emit('update:treeData',  [..._treeData, {type: "loading"}]);
+        } else {
+          ctx.emit('update:treeData', _treeData);
+        }
+      } else {
+        _item.children = [..._item.children, ..._increamentNodes];
+        if (_item.children.length < res2.data.length) {
+          _item.children.push({type: "loading", _parent: _item});
+        }
+      }
+    }
+
+    /**
+     * 滚动加载数据
+     * @param {*} data 当前可视区内的 loading 节点（Tree组件中的）
+     * @param {*} attributes 当前可视区内的 loading 节点（Tree组件中的）相关的属性
+     */
+    const handleLoadDataByScroll = (data, attributes) => {
+      // 有 _parent，加载非根节点的下一页数据；无 _parent，加载根节点的下一页数据
+      if (data._parent) { 
         //1.移除loading节点
         data._parent.children.pop();
         //2.更新分页参数
         data._parent.pageNum++;
         //3.请求下一页数据
-        ctx.emit('loadData', data._parent, attributes.fullPath.split("-").length);
-      } else { // 加载下一页的 rootData
-        ctx.emit('loadRootDataByScroll');
+        loadRemoteData(data._parent, attributes.fullPath.split("-").length);
+      } else {
+        ctx.emit('update:treeData', props.treeData.slice(0, -1));
+        rootPageNum.value++;
+        loadRemoteData(null, null, true);
       }
     }
+
+    onMounted(() => {
+      // 组件挂载，加载 root node
+      loadRemoteData(null, null, true);
+    })
 
     return () => (
       <div>
         <bk-tree data={props.treeData} label="name" children="children" level-line virtual-render
           onScroll={throttle(() => { loadingRef.value && observer.observe(loadingRef.value.$el); }, 300)}
-          async={{ callback: (_item, _callback , _schema) => {
-              const _depth = _schema.fullPath.split("-").length;
-              ctx.emit("loadData", _item, _depth + 1);
-            },
-            cache: true,
-          }}
-        >
+          async={{ callback: (_item, _callback , _schema) => { loadRemoteData(_item, _schema.fullPath.split("-").length + 1) }, cache: true }}>
           {{
             default: ({ data, attributes }) => {
               if (data.type === 'loading') {
                 return (
-                  <bk-loading ref={loadingRef} loading size="small" onLoadData={() => {handleLoadData(data, attributes)}}>
+                  <bk-loading ref={loadingRef} loading size="small" onLoadDataByScroll={() => { 
+                    // 因为在标签上使用 data-xxx 会丢失引用，但我需要 data._parent 的引用（因为加载数据时会直接操作该对象），所以这里借用了闭包的特性。
+                    handleLoadDataByScroll(data, attributes)
+                  }}>
                     <div style={{ height: "36px" }}></div>
                   </bk-loading>
                 )
