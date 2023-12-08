@@ -1,9 +1,12 @@
 import { defineComponent, onMounted, ref } from "vue";
 import { throttle } from "lodash";
 import axios from "axios";
+import clbIcon from "@/assets/images/clb.png";
+import listenerIcon from "@/assets/images/listener.png";
+import domainIcon from "@/assets/images/domain.png";
 
 /**
- * 基于 bkui-vue Tree 的动态树，支持滚动加载数据。
+ * 基于 bkui-vue Tree 的动态树，支持滚动加载数据。（针对于 bk-hcm 项目作调整）
  * 
  * 注意点：
  * - 对数据格式有要求，详细见 src/api/db.json 文件
@@ -11,7 +14,7 @@ import axios from "axios";
  */
 export default defineComponent({
   name: "DynamicTree",
-  props: ["baseUrl", "treeData", "rootType", "typeIconMap"],
+  props: ["baseUrl", "treeData", "typeIconMap"],
   emits: ["update:treeData"],
   setup(props, ctx) {
     const loadingRef = ref();
@@ -27,34 +30,42 @@ export default defineComponent({
       });
     });
 
+    // _depth 与 type 的映射关系
+    const depthTypeMap = ['clb', 'listener', 'domain'];
+    const typeIconMap = {
+      clb: clbIcon,
+      listener: listenerIcon,
+      domain: domainIcon
+    };
+
     /**
      * 加载数据
-     * @param {*} _item 需要加载数据的节点
-     * @param {*} _depth 需要加载数据的节点的深度
-     * @param {*} isLoadRoot 值为 true 时，加载根节点；建议为 true 时，前两个参数设置为 null 和 -1。
+     * @param {*} _item 需要加载数据的节点，值为 null 表示加载根节点的数据
+     * @param {*} _depth 需要加载数据的节点的深度，取值为：0, 1, 2
      */
-    const loadRemoteData = async(_item: any, _depth: number, isLoadRoot?: boolean) => {
-      const url = props.baseUrl + `/${isLoadRoot ? props.rootType : _item.subType}`;
+    const loadRemoteData = async(_item: any, _depth: number) => {
+      console.log(_item);
+      const url = props.baseUrl + `/${!_item ? depthTypeMap[_depth] : depthTypeMap[_depth+1]}`;
       const params = { 
-        _page: isLoadRoot ? rootPageNum.value : _item.pageNum, 
+        _page: !_item ? rootPageNum.value : _item.pageNum,
         _limit: 50, 
-        parentId: isLoadRoot ? null : _item.id // 根节点没有 parentId，或者后端给个 null 也行，这样前端这里就不需要判断了
+        parentId: !_item ? null : _item.id // 根节点没有 parentId
       };
-      const [res1, res2] = await Promise.all([ axios.get(url, {params}), axios.get(url, {params: { parentId: isLoadRoot ? null : _item.id }}) ]);
+      const [res1, res2] = await Promise.all([ axios.get(url, {params}), axios.get(url, {params: { parentId: !_item ? null : _item.id }}) ]);
 
       // 组装新增的节点
       const _increamentNodes = res1.data.map((item: any) => {
-        // 如果是加载根节点的数据，就不用设置 item.type
-        !isLoadRoot && (item.type = _item.subType);
-        // 如果是加载根节点或非叶子节点的数据，需要给每个 item 添加 async = true 以及初始化 pageNum = 1
-        if (_depth < 3 || isLoadRoot) {
+        // 如果是加载根节点的数据，则 type 设置为当前 type；如果是加载子节点的数据，则 type 设置为下一级 type
+        !_item ? (item.type = depthTypeMap[_depth]) : (item.type = depthTypeMap[_depth+1]);
+        // 如果是加载根节点或非叶子节点的数据，需要给每个 item 添加 async = true 用于异步加载，以及初始化 pageNum = 1
+        if (_depth < 1 || !_item) {
           item.async = true;
           item.pageNum = 1;
         }
         return item;
       })
       
-      if (isLoadRoot) {
+      if (!_item) {
         const _treeData = [...props.treeData, ..._increamentNodes];
         if (_treeData.length < res2.data.length) {
           ctx.emit('update:treeData',  [..._treeData, {type: "loading"}]);
@@ -82,24 +93,30 @@ export default defineComponent({
         //2.更新分页参数
         data._parent.pageNum++;
         //3.请求下一页数据
-        loadRemoteData(data._parent, attributes.fullPath.split("-").length);
+        loadRemoteData(data._parent, attributes.fullPath.split("-").length-2);
       } else {
         ctx.emit('update:treeData', props.treeData.slice(0, -1));
         rootPageNum.value++;
-        loadRemoteData(null, -1, true);
+        loadRemoteData(null, 0);
       }
     }
 
     onMounted(() => {
       // 组件挂载，加载 root node
-      loadRemoteData(null, -1, true);
+      loadRemoteData(null, 0);
     })
 
     return () => (
       <div>
         <bk-tree data={props.treeData} label="name" children="children" level-line virtual-render
           onScroll={throttle(() => { loadingRef.value && observer.observe(loadingRef.value.$el); }, 300)}
-          async={{ callback: (_item: any, _callback: Function, _schema: any) => { loadRemoteData(_item, _schema.fullPath.split("-").length + 1) }, cache: true }}>
+          async={{ 
+            callback: (_item: any, _callback: Function, _schema: any) => { 
+              // 异步加载当前点击节点的 children node
+              loadRemoteData(_item, _schema.fullPath.split("-").length-1); 
+            }, 
+            cache: true 
+          }}>
           {{
             default: ({ data, attributes }: any) => {
               if (data.type === 'loading') {
@@ -115,7 +132,7 @@ export default defineComponent({
               return <div>{data.name}</div>
             },
             nodeType: (node: any) => {
-              return <img src={props.typeIconMap[node.type]} alt="" style="padding: 0 10px;"/>
+              return <img src={typeIconMap[node.type]} alt="" style="padding: 0 10px;"/>
             }
           }}
         </bk-tree>
